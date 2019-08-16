@@ -1,0 +1,27 @@
+{
+  "name": "bottomtime-aws",
+  "version": "1.0.0",
+  "description": "Terraform project for Bottom Time application",
+  "main": "index.js",
+  "private": true,
+  "directories": {
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "mocha -t 30000 tests/*"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ChrisCarleton/BottomTime-Terraform.git"
+  },
+  "author": "Chris Carleton",
+  "bugs": {
+    "url": "https://github.com/ChrisCarleton/BottomTime-Terraform/issues"
+  },
+  "homepage": "https://github.com/ChrisCarleton/BottomTime-Terraform#readme",
+  "devDependencies": {
+    "chai": "^4.2.0",
+    "faker": "^4.1.0",
+    "moment": "^2.24.0"
+  }
+}
