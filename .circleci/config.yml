@@ -62,7 +62,9 @@ jobs:
     steps:
       - run:
           name: Get Build Number
-          command: aws s3 cp s3://bottomtime-tfstate/dev_build_number ./build
+          command: |
+            aws s3 cp s3://bottomtime-tfstate/dev_build_number ./build
+            echo "Got build number $(cat build)"
       - persist_to_workspace:
           root: ./
           paths:
@@ -75,7 +77,9 @@ jobs:
     steps:
       - run:
           name: Get Build Number
-          command: aws s3 cp s3://bottomtime-tfstate/prod_build_number ./build
+          command: |
+            aws s3 cp s3://bottomtime-tfstate/prod_build_number ./build
+            echo "Got build number $(cat build)"
       - persist_to_workspace:
           root: ./
           paths:
