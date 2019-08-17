@@ -49,7 +49,7 @@ jobs:
             mocha tests/*.tests.js
       - run:
           name: Package Database Maintenance Lambda
-          working_directory: lambda/db-maintenace/
+          working_directory: lambda/db-maintenance/
           command: zip -rq ../db-maintenance.zip index.js node_modules/
       - persist_to_workspace:
           root: lambda/
