@@ -45,6 +45,7 @@ jobs:
             NODE_ENV: test
           command: |
             npm install -g mocha
+            npm install
             mocha tests/*.tests.js
       - run:
           name: Package Database Maintenance Lambda
