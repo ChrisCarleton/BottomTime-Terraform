@@ -1,0 +1,179 @@
+version: 2.1
+
+jobs:
+  validate:
+    docker:
+      - image: hashicorp/terraform:0.11.10
+    steps:
+      - checkout
+      - run:
+          name: Validate Terraform Files
+          working_directory: terraform/env/dev/us-east-1
+          command: |
+            echo "mongodb_endpoint = \"$DEV_DATABASE\"" >> secret.tfvars
+            echo "es_endpoint = \"$DEV_ELASTICSEARCH\"" >> secret.tfvars
+            echo "google_client_secret = \"$GOOGLE_CLIENT_SECRET\"" >> secret.tfvars
+            echo "build_number = \"$(cat ../../build)\"" >> secret.tfvars
+            echo "smtp_auth_password = \"$DEV_SMTP_PASSWORD\"" >> secret.tfvars
+            echo "smtp_auth_username = \"$DEV_SMTP_USERNAME\"" >> secret.tfvars
+            echo "smtp_host = \"$DEV_SMTP_HOST\"" >> secret.tfvars
+            echo "smtp_port = \"$DEV_SMTP_PORT\"" >> secret.tfvars
+            echo "smtp_use_tls = true" >> secret.tfvars
+            terraform init -from-module=../../../modules/ -backend-config="key=dev.us-east-1.tfstate"
+            terraform validate -var-file=config.tfvars -var-file=secret.tfvars
+            terraform plan -var-file secret.tfvars -var-file config.tfvars > /dev/null
+
+  package-lambdas:
+    docker:
+      - image: node:10.15.3-jessie
+        environment:
+          BT_MONGO_ENDPOINT: mongodb://mongo/dev
+      - image: mongo:2.6.8
+        name: mongo
+    steps:
+      - checkout
+      - run:
+          name: Get Zip
+          command: apt update && apt install -y zip
+      - run:
+          name: Database Maintenance Lambda Dependencies
+          working_directory: lambda/db-maintenance/
+          command: npm install
+      - run:
+          name: Test
+          environment:
+            NODE_ENV: test
+          command: |
+            npm install -g mocha
+            mocha tests/*.tests.js
+      - run:
+          name: Package Database Maintenance Lambda
+          working_directory: lambda/db-maintenace/
+          command: zip -rq ../db-maintenance.zip index.js node_modules/
+      - persist_to_workspace:
+          root: lambda/
+          paths:
+            - db-maintenance.zip
+
+  get-build-number-dev:
+    machine:
+      enabled: true
+      image: circleci/classic:201808-01
+    steps:
+      - run:
+          name: Get Build Number
+          command: |
+            aws s3 cp s3://bottomtime-tfstate/dev_build_number ./build
+            echo "Got build number $(cat build)"
+      - persist_to_workspace:
+          root: ./
+          paths:
+            - build
+
+  get-build-number-prod:
+    machine:
+      enabled: true
+      image: circleci/classic:201808-01
+    steps:
+      - run:
+          name: Get Build Number
+          command: |
+            aws s3 cp s3://bottomtime-tfstate/prod_build_number ./build
+            echo "Got build number $(cat build)"
+      - persist_to_workspace:
+          root: ./
+          paths:
+            - build
+
+  deploy-dev:
+    docker:
+      - image: hashicorp/terraform:0.11.10
+    steps:
+      - checkout
+      - attach_workspace:
+          at: terraform/env/
+      - run:
+          name: Deploy Dev Environment
+          working_directory: terraform/env/dev/us-east-1
+          command: |
+            mv ../../db-maintenance.zip ../../../modules/resources/
+            echo "mongodb_endpoint = \"$DEV_DATABASE\"" >> secret.tfvars
+            echo "es_endpoint = \"$DEV_ELASTICSEARCH\"" >> secret.tfvars
+            echo "google_client_secret = \"$GOOGLE_CLIENT_SECRET\"" >> secret.tfvars
+            echo "build_number = \"$(cat ../../build)\"" >> secret.tfvars
+            echo "smtp_auth_password = \"$DEV_SMTP_PASSWORD\"" >> secret.tfvars
+            echo "smtp_auth_username = \"$DEV_SMTP_USERNAME\"" >> secret.tfvars
+            echo "smtp_host = \"$DEV_SMTP_HOST\"" >> secret.tfvars
+            echo "smtp_port = \"$DEV_SMTP_PORT\"" >> secret.tfvars
+            echo "smtp_use_tls = true" >> secret.tfvars
+            terraform init -from-module=../../../modules/ -backend-config="key=dev.us-east-1.tfstate"
+            terraform apply -auto-approve -var-file secret.tfvars -var-file config.tfvars > /dev/null
+
+  deploy-prod:
+    docker:
+      - image: hashicorp/terraform:0.11.10
+    steps:
+      - checkout
+      - attach_workspace:
+          at: terraform/env/
+      - run:
+          name: Deploy Prod Environment
+          working_directory: terraform/env/prod/us-east-1
+          command: |
+            mv ../../db-maintenance.zip ../../../modules/resources/
+            echo "mongodb_endpoint = \"$PROD_DATABASE\"" >> secret.tfvars
+            echo "es_endpoint = \"$PROD_ELASTICSEARCH\"" >> secret.tfvars
+            echo "google_client_secret = \"$GOOGLE_CLIENT_SECRET\"" >> secret.tfvars
+            echo "build_number = \"$(cat ../../build)\"" >> secret.tfvars
+            echo "session_secret = \"$PROD_SESSION_SECRET\"" >> secret.tfvars
+            echo "smtp_auth_password = \"$PROD_SMTP_PASSWORD\"" >> secret.tfvars
+            echo "smtp_auth_username = \"$PROD_SMTP_USERNAME\"" >> secret.tfvars
+            echo "smtp_host = \"$PROD_SMTP_HOST\"" >> secret.tfvars
+            echo "smtp_port = \"$PROD_SMTP_PORT\"" >> secret.tfvars
+            echo "smtp_use_tls = true" >> secret.tfvars
+            terraform init -from-module=../../../modules/ -backend-config="key=prod.us-east-1.tfstate"
+            terraform apply -auto-approve -var-file secret.tfvars -var-file config.tfvars > /dev/null
+
+workflows:
+  version: 2
+  validate-and-deploy:
+    jobs:
+      - validate
+      - package-lambdas:
+          requires:
+            - validate
+          filters:
+            branches:
+              only:
+                - master
+                - prod
+      - get-build-number-dev:
+          requires:
+            - validate
+          filters:
+            branches:
+              only:
+                - master
+      - get-build-number-prod:
+          requires:
+            - validate
+          filters:
+            branches:
+              only:
+                - prod
+      - deploy-dev:
+          requires:
+            - package-lambdas
+            - get-build-number-dev
+          filters:
+            branches:
+              only:
+                - master
+      - deploy-prod:
+          requires:
+            - package-lambdas
+            - get-build-number-prod
+          filters:
+            branches:
+              only:
+                - prod
